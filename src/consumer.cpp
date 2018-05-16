@@ -1,27 +1,23 @@
 #include "consumer.h"
+#include "producer.h"
 #include <iostream>
+
+Conditional Consumer::cons;
 
 using namespace std;
 
-Consumer::Consumer(int id){
-	this->id = id;
-	active = 0;
+Consumer::Consumer(){
+	//cout << ">" << cons.id  << "<" << criticalSection.id << endl;
 }
 
-
 void Consumer::consume(){
-	// enter critical section
 	enterCritical();
-// while(buff.n==0){
-// 	//cout << "Śmiejący się consumer numer " << this->id <<" chciałby coś zjeść ale nie może :( \n" << endl;
-// 	}
+	while(buff.n<=0){
+		wait(&cons);
+	}
 
 	buff.n--;
-
-	// cout << "Śmiejący się consumer numer " << this->id <<" zjada: " << buff.n << "\n" << endl;
-leaveCritical();
-
-
-	// leave critical section
+	log("!!! Consuming !!!");
+	leaveCritical();
 
 }

@@ -1,10 +1,13 @@
+#pragma once
+
 #include "monitor.h"
+#include "conditional.h"
 
-class Producer : Monitor {
-private:
-
+class Producer : public Monitor {
 public:
-	Producer(int id);
+	Producer();
+
+	static Conditional prod;
 
 	void produce();
 

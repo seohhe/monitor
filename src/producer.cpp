@@ -1,32 +1,26 @@
 #include "producer.h"
+#include "consumer.h"
 #include <iostream>
+
+Conditional Producer::prod;
 
 using namespace std;
 
-Producer::Producer(int id){
-	this->id = id;
-	active = 0;
+Producer::Producer(){
 	if(id==0){
-			buff.n = 0;
-			active = 1;
+		buff.n = 0;
+	}
 
-		}
+	//cout << "<" << prod.id  << "<" << criticalSection.id << endl;
 }
 
-
 void Producer::produce(){
-	// enter critical section
 	enterCritical();
-// while(buff.n>=3){
-// 	//cout << "Płaczący producent numer " << this->id <<" chciałby ale nie może :( \n" << endl;
-// 	}
-
+	while(buff.n>=3){
+		wait(&prod);
+	}
 	buff.n++;
-
-	// cout << "Płaczący producent numer " << this->id <<" strumieniuje: " << buff.n << "\n" << endl;
-leaveCritical();
-
-
-	// leave critical section
-
+	log("!!! Producing !!!");
+	leaveCritical();
+	usleep(10000);
 }

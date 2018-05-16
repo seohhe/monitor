@@ -1,92 +1,137 @@
 #include "monitor.h"
 #include <iostream>
+#include <cstdlib>
 #include <pthread.h>
+
+Conditional Monitor::criticalSection;
 
 using namespace std;
 
 Monitor::Monitor(){
-	//mpi::environment env(argc, argv); 
-	size=MPI::COMM_WORLD.Get_size();
-	id=MPI::COMM_WORLD.Get_rank();
+	size = MPI::COMM_WORLD.Get_size();
+	id = MPI::COMM_WORLD.Get_rank();
 	active = 0;
-	if(id==0) active = 1;
-
-	pthread_t listener;
-  if (pthread_create(&listener, NULL, Monitor::loop, 0)) {
-     cout << "Error:unable to create thread," << rc << endl;
-     exit(-1);
-  }
-}
-
-void Monitor::loop() {
-	// cout << "Loop" << id << endl;   
-	MPI_Status status;
-	// MPI_Recv( &max, sizeof(int), MPI_INT, size-1, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-
-  std::string s;
-
-  MPI_Datatype datatype;
-	MPI_Type_contiguous(sizeof(struct Buff), MPI_BYTE, &datatype);
-	MPI_Type_commit(&datatype);
-
-	// MPI_Isend(&buff, 1, datatype, (id+1)%size, 0, MPI_COMM_WORLD, 0); 
-	MPI_Recv( &buff, sizeof(struct Buff), datatype, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-
-
-	// world.recv(boost::mpi::any_source, 01, s);
-
-	// unsigned char b_data[sizeof(struct Buff)];
-	// const char *temp = s.c_str();
- //  // memcpy(temp, (unsigned char *) &b_data, sizeof(struct Buff));
-	// memcpy(&buff, &b_data, sizeof(struct Buff));
-
-
-	// cout << id << ") dostalem: " << s[0] + s[1] + s[2] + s[3] << endl;
-	// cout << id << ") odebrano: " << s << endl;
-	cout << id << ") recieve | n = " << buff.n << endl; 
-	fflush(stdin);  
-	active = 1;
+	if(id==0) {
+		active = 1;
+		for(int i = 0; i < size; i++) {
+			buff.queue.x[i] = 0;
+		}
+	}
 }
 
 void Monitor::enterCritical(){
-	while(!active) loop();
+	if(!active) {
+		wait(&criticalSection);
+	}
+
+	notify = criticalSection.id;
+	log("entering");
+
+	requests = (MPI_Request*) malloc(sizeof(MPI_Request) * size);
+	responses = (struct Buff*) malloc(sizeof(struct Buff) * size);
+	
+	for(int i = 0; i < size; i++) {
+		if(i==id) continue;
+		MPI_Datatype datatype;
+		MPI_Type_contiguous(sizeof(struct Buff), MPI_BYTE, &datatype);
+		MPI_Type_commit(&datatype);
+		MPI_Irecv(&responses[i], sizeof(struct Buff), datatype, i, MPI_ANY_TAG, MPI_COMM_WORLD, &requests[i]);
+	}
 }
 
-void Monitor::leaveCritical(){
-	active = 0;
-// cout << id << ")" << buff.n << endl; 
-	// char* temp = (char*) malloc(sizeof(struct Buff) + 1);
-	// memcpy(&temp, &buff, sizeof(struct Buff));
-	// temp[sizeof(struct Buff)] = 0;
-	// std::string buffer(temp);
-buff.n = id;
-	cout << id << ") send | n = " << buff.n << endl;
-	fflush(stdin);   
-	MPI_Datatype datatype;
+void Monitor::sendBuff(struct Buff* buff, int type, int target){
+			buff->type = type;
+			MPI_Datatype datatype;
+			MPI_Type_contiguous(sizeof(struct Buff), MPI_BYTE, &datatype);
+			MPI_Type_commit(&datatype);
+			MPI_Send( buff, 1, datatype, target, 1, MPI_COMM_WORLD);
+}
+
+void Monitor::recvBuff(struct Buff* buff){
+	MPI_Status status;
+  MPI_Datatype datatype;
 	MPI_Type_contiguous(sizeof(struct Buff), MPI_BYTE, &datatype);
 	MPI_Type_commit(&datatype);
-
-	// MPI_Isend(&buff, 1, datatype, (id+1)%size, 0, MPI_COMM_WORLD, 0); 
-	MPI_Send( &buff, 1, datatype, (id+1)%size, 1, MPI_COMM_WORLD);
-return;
-	unsigned char b_data[sizeof(struct Buff)];
-  memcpy(b_data, (unsigned char *) &buff, sizeof(struct Buff));
-
-  //save_bytes(b_data, sizeof(struct Buff));
-
-	std::string buffer((char*)b_data);
-	// cout << buffer << endl;
-	cout << id << ") wyslalem: " << buffer[0] + buffer[1] + buffer[2] + buffer[3] << endl;
-  cout << id << ") WYSLAONO " << buffer << endl;
-  cout << id << ") n = " << buff.n << endl;      
-	world.send((id+1)%size, 0, buffer);
-	// MPI_Send( &max, 1, MPI_INT, id+1, 1, MPI_COMM_WORLD);
+	MPI_Recv(buff, sizeof(struct Buff), datatype, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);	
 }
 
-void Monitor::lock(){
-	active = 1;
+void Monitor::loop() {
+	while(1) {
+		struct Buff b;
+		recvBuff(&b);
+		if(b.type == -this->buff.queue.x[id]) {
+			memcpy(&buff, &b, sizeof(struct Buff));
+			this->buff.queue.x[id] = 0;
+			break;
+		}
+	}
+	//log("recived");
+notify = criticalSection.id;
+	this->active = 1;
 }
 
-void Monitor::unlock(){
-	active = 0;
+void Monitor::leaveCritical(bool f){
+	//log("leaving");
+	for(int i = 0; i < size; i++) {
+		if(i==id) continue;
+		MPI_Status b;
+		int t;
+		MPI_Test(&requests[i], &t, &b);
+		if(t) {
+			if(responses[i].type >	 0) {
+				// for(int j = 0; j < sizeof(responses[i].queue.x); j++) {
+				// 	this->buff.queue.x[j] = responses[i].queue.x[j];
+				// }
+				this->buff.queue.x[i] = responses[i].type;
+				//log("add to queue");
+			}
+		} else {
+			MPI_Cancel(&requests[i]);
+			MPI_Request_free(&requests[i]);
+		}
+	}
+	// log("new queue");
+   
+	for(int i = id+1;; i++) {
+		i = i % size;
+		if(!f && i == id) break;
+		if(buff.queue.x[i]==notify){
+			this->active = 0;
+			// log("sending");
+			sendBuff(&buff, -criticalSection.id, i);
+			break;
+		}
+	}
+}
+
+void Monitor::wait(Conditional* cond){
+	//log("Waiting");
+	struct Buff b;
+	buff.queue.x[id] = cond->id;
+
+	if(cond->id != criticalSection.id) {
+		leaveCritical(true);
+	} else
+	for(int i = 0; i < size; i++) {
+		if(i==id) continue;
+		sendBuff(&b, cond->id, i);
+	}	
+	loop();
+}
+
+void Monitor::signal(Conditional* cond){
+	notify = cond->id;
+}
+
+void Monitor::log(string action) {
+	cout << this->id << ") " << action << " n=" << this->buff.n << " ";
+	cout << "active=" << active << " ";
+	cout << "type=" << buff.type << " ";
+	cout << "queue=[" << buff.queue.x[0] << ","
+							<< buff.queue.x[1] << ","
+							<< buff.queue.x[2] << ","
+							<< buff.queue.x[3] << ","
+							<< buff.queue.x[4] << ","
+							<< buff.queue.x[5] << "]";
+	cout << endl;
 }

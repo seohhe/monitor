@@ -8,16 +8,18 @@ int main(int argc, char **argv) {
   int rank = MPI::COMM_WORLD.Get_rank();
 
   if(rank%2==0){
-    Producer* p = new Producer(rank);
-    for(int i=0; i<10; i++){
+    Producer* p = new Producer();
+    for(int i=0; i<2; i++){
       p->produce();
     }
+    while(p->active) { p->enterCritical(); sleep(1); p->leaveCritical(); }
   } else {
-    Consumer* c = new Consumer(rank);
-    for(int i=0; i<10; i++){
+    Consumer* c = new Consumer();
+    for(int i=0; i<2; i++){
       c->consume();
     }
+    while(c->active) { c->enterCritical(); sleep(1); c->leaveCritical(); }
   }
-  // cout <<"Hello world: " << rank <<" of " << size << endl;
+  cout <<"Hello world: " << rank <<" of " << size << endl;
   MPI::Finalize();
 }

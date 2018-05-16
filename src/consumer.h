@@ -1,11 +1,13 @@
+#pragma once
+
 #include "monitor.h"
+#include "conditional.h"
 
-class Consumer : Monitor
-{
-private:
-
+class Consumer : public Monitor {
 public:
-	Consumer(int id);
+	Consumer();
+
+	static Conditional cons;
 
 	void consume();
 

@@ -1,17 +1,11 @@
 #pragma once
 
 #include <stdlib.h>
+#include <string>
 #include <mpi.h>
+#include <unistd.h>
 #include "buffer.h"
-
-#include <boost/mpi.hpp>
-#include <boost/mpi/communicator.hpp>
-#include <boost/mpi/environment.hpp>
-#include <boost/serialization/string.hpp> 
-#include <boost/archive/text_oarchive.hpp> 
-#include <boost/archive/text_iarchive.hpp> 
-
-namespace mpi = boost::mpi;
+#include "conditional.h"
 
 class Monitor{
 
@@ -19,18 +13,23 @@ protected:
   struct Buff buff; 
   int id;
   int size;
-  int max;
-  mpi::communicator world;
+  MPI_Request* requests;
+  struct Buff* responses;
+  int notify;
 
 public:
-  Monitor();
-  
-  int active;
-  static void loop();
-  void enterCritical();
-  void leaveCritical();
-  void lock();
-  void unlock();
+  static Conditional criticalSection;
 
-  ~Monitor();
+  int active;
+
+  Monitor();
+
+  void enterCritical();
+  void sendBuff(struct Buff* buff, int type, int target);
+  void recvBuff(struct Buff* buff);
+  void loop();
+  void leaveCritical(bool f = false);
+  void wait(Conditional* cond);
+  void signal(Conditional* cond);
+  void log(std::string action);
 };
